@@ -1,0 +1,28 @@
+#!/bin/sh
+
+# Save this file to /etc/hotplug.d/iface/99-yapdd
+
+if [ "$ACTION" = "ifup" -a "$INTERFACE" = "wan" ]; then
+
+# Get token: https://pddimp.yandex.ru/api2/admin/get_token
+PPDY_TOKEN=1234567890123456789012345678901234567890123456789012
+PPDY_DOMAIN=domain.ru
+# Get IDs: https://pdd.yandex.ru/domain_ns/domain.ru (See page source code for "edit" buttons)
+PPDY_IDALL=12345678
+PPDY_IDMAIL=01234567
+PPDY_TTL=1800
+
+# Get ip for Wan interface (Loaded to $ip)
+. /lib/functions/network.sh; network_get_ipaddr ip wan
+
+# Update "@" record (Mail)
+curl -H "PddToken: $PPDY_TOKEN" -d \
+"domain=$PPDY_DOMAIN&record_id=$PPDY_IDMAIL&subdomain=@&ttl=$PPDY_TTL&content=$ip" \
+"https://pddimp.yandex.ru/api2/admin/dns/edit"
+
+# Update "*" record (All subdomains)
+curl -H "PddToken: $PPDY_TOKEN" -d \
+"domain=$PPDY_DOMAIN&record_id=$PPDY_IDALL&subdomain=*&ttl=$PPDY_TTL&content=$ip" \
+"https://pddimp.yandex.ru/api2/admin/dns/edit"
+
+fi
