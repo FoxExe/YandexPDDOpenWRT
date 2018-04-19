@@ -7,5 +7,6 @@ This script will update DNS ip's when WAN interface was reconnected.
 * Install Curl and ca-certificate (System -> Software -> Search -> install) or:
   ```bash
   opkg update
-  opkg install curl ca-certificate ca-bundle```
+  opkg install curl ca-certificate ca-bundle
+  ```
 * Edit script and save as: `/etc/hotplug.d/iface/99-yapdd`
