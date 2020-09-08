@@ -1,12 +1,12 @@
 # YandexPDDOpenWRT
-This script will update DNS ip's when WAN interface was reconnected.
+Update Yandex DNS records whe IP on WAN interface is changed
 
 
 ### Instruction:
-* Enable SSH
-* Install Curl and ca-certificate (System -> Software -> Search -> install) or:
+* Install Curl and ca-certificate (System -> Software -> Search / install) or:
   ```bash
   opkg update
-  opkg install curl ca-certificate ca-bundle
+  opkg install curl ca-certificates ca-bundle
   ```
-* Edit script and save as: `/etc/hotplug.d/iface/99-yapdd`
+* Enable SSH
+* Edit variables in script and save as: `/etc/hotplug.d/iface/99-yapdd`

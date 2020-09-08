@@ -1,28 +1,59 @@
 #!/bin/sh
 
-# Save this file to /etc/hotplug.d/iface/99-yapdd
+# Save this file as /etc/hotplug.d/iface/99-yapdd
+# Need install curl and ca-certificates!
 
 if [ "$ACTION" = "ifup" -a "$INTERFACE" = "wan" ]; then
 
 # Get token: https://pddimp.yandex.ru/api2/admin/get_token
-PPDY_TOKEN=1234567890123456789012345678901234567890123456789012
-PPDY_DOMAIN=domain.ru
-# Get IDs: https://pdd.yandex.ru/domain_ns/domain.ru (See page source code for "edit" buttons)
-PPDY_IDALL=12345678
-PPDY_IDMAIL=01234567
-PPDY_TTL=1800
+PPDY_TOKEN=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+# Domain name for update
+PPDY_DOMAIN='my-domain.ru'
+# Update only these subdomains (records). Regexp format (grep -E)
+PPDY_FILTER='*|@|www'
+# TTL (Time to live). Set this to minimum (600) for faster DNS updates
+PPDY_TTL=600
 
-# Get ip for Wan interface (Loaded to $ip)
-. /lib/functions/network.sh; network_get_ipaddr ip wan
+# Obtain current WAN IP
+WAN_IP=`ifstatus wan | jsonfilter -e '@["ipv4-address"][0].address'`
 
-# Update "@" record (Mail)
-curl -H "PddToken: $PPDY_TOKEN" -d \
-"domain=$PPDY_DOMAIN&record_id=$PPDY_IDMAIL&subdomain=@&ttl=$PPDY_TTL&content=$ip" \
-"https://pddimp.yandex.ru/api2/admin/dns/edit"
+# Obtain available DNS records
+RECORDS=$(curl -s -H "PddToken: $PPDY_TOKEN" "https://pddimp.yandex.ru/api2/admin/dns/list?domain=$PPDY_DOMAIN" | jsonfilter -e "@.records[@.type='A']['subdomain','record_id','content']" | xargs -n 3)
+# Returns 3 values: Record ID, Subdomain and current IP. 
 
-# Update "*" record (All subdomains)
-curl -H "PddToken: $PPDY_TOKEN" -d \
-"domain=$PPDY_DOMAIN&record_id=$PPDY_IDALL&subdomain=*&ttl=$PPDY_TTL&content=$ip" \
-"https://pddimp.yandex.ru/api2/admin/dns/edit"
+IFS=$'\n'
+for REC in $RECORDS; do
+  # WARNING: Values in JSon answer in Random order and changed almost every time! Need filter it.
+  IFS=$' '
+  for VALUE in $REC; do
+    # Check if value is Record_id
+    if echo "$VALUE" | grep -qE '^[0-9]+$'; then
+      REC_ID=$VALUE;
+    # Check if value is IP address
+    elif echo "$VALUE" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+      REC_IP=$VALUE
+    # In other cases - its subdomain
+    else
+      REC_DOM=$VALUE
+    fi
+  done
+
+  # Do not update if IP still same
+  if [[ $REC_IP == $WAN_IP ]]; then
+    logger -p daemon.notice -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\" because IP not changed ($REC_IP)"
+    continue
+  fi
+
+  # Update only allowed subdomains
+  if echo $REC_DOM | grep -qE "^[$PPDY_FILTER]$"; then
+    logger -p daemon.notice -t yandex-pdd-update[$$] "Found subdomain \"$REC_DOM\" with ID=\"$REC_ID\". OLD IP:\"$REC_IP\" -> NEW IP: \"$WAN_IP\""
+    logger -p daemon.info -t yandex-pdd-update[$$] "Result: " $(curl -s -H "PddToken: $PPDY_TOKEN" -d \
+      "domain=$PPDY_DOMAIN&record_id=$REC_ID&subdomain=$REC_DOM&ttl=$PPDY_TTL&content=$WAN_IP" \
+      "https://pddimp.yandex.ru/api2/admin/dns/edit")
+  else
+    logger -p daemon.info -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\" because not in filter: \"$PPDY_FILTER\""
+  fi
+done
+unset IFS
 
 fi
