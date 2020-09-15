@@ -1,9 +1,12 @@
-#!/bin/sh
+#!/bin/ash
 
 # Save this file as /etc/hotplug.d/iface/99-yapdd
 # Need install curl and ca-certificates!
 
 if [ "$ACTION" = "ifup" -a "$INTERFACE" = "wan" ]; then
+
+# Disable pathname expansion, because we have special symbols in domain names
+set -f
 
 # Get token: https://pddimp.yandex.ru/api2/admin/get_token
 PPDY_TOKEN=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
@@ -28,32 +31,34 @@ for REC in $RECORDS; do
   for VALUE in $REC; do
     # Check if value is Record_id
     if echo "$VALUE" | grep -qE '^[0-9]+$'; then
-      REC_ID=$VALUE;
+      REC_ID="$VALUE";
     # Check if value is IP address
     elif echo "$VALUE" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-      REC_IP=$VALUE
+      REC_IP="$VALUE"
     # In other cases - its subdomain
     else
-      REC_DOM=$VALUE
+      REC_DOM="$VALUE"
     fi
   done
 
+  logger -p daemon.info -t yandex-pdd-update[$$] "Found ID: $REC_ID (\"$REC_DOM\", IP: $REC_IP)"
+
   # Do not update if IP still same
-  if [[ $REC_IP == $WAN_IP ]]; then
-    logger -p daemon.notice -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\" because IP not changed ($REC_IP)"
+  if [[ "$REC_IP" == "$WAN_IP" ]]; then
+    logger -p daemon.notice -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\": IP already set"
     continue
   fi
 
   # Update only allowed subdomains
-  if echo $REC_DOM | grep -qE "^[$PPDY_FILTER]$"; then
-    logger -p daemon.notice -t yandex-pdd-update[$$] "Found subdomain \"$REC_DOM\" with ID=\"$REC_ID\". OLD IP:\"$REC_IP\" -> NEW IP: \"$WAN_IP\""
+  if echo "$REC_DOM" | grep -qE "^[$PPDY_FILTER]$"; then
     logger -p daemon.info -t yandex-pdd-update[$$] "Result: " $(curl -s -H "PddToken: $PPDY_TOKEN" -d \
       "domain=$PPDY_DOMAIN&record_id=$REC_ID&subdomain=$REC_DOM&ttl=$PPDY_TTL&content=$WAN_IP" \
       "https://pddimp.yandex.ru/api2/admin/dns/edit")
   else
-    logger -p daemon.info -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\" because not in filter: \"$PPDY_FILTER\""
+    logger -p daemon.notice -t yandex-pdd-update[$$] "Skipping \"$REC_DOM\": Not in filter ($PPDY_FILTER)"
   fi
 done
-unset IFS
+
+#unset REC VALUE RECORDS WAN_IP REC_ID REC_IP REC_DOM IFS
 
 fi
